@@ -10,5 +10,6 @@ router.get("/weekly", asyncHandler(statsController.weekly));
 router.get("/tags", asyncHandler(statsController.tags));
 router.get("/momentum", asyncHandler(statsController.momentum));
 router.get("/heatmap", asyncHandler(statsController.heatmap));
+router.get("/hourly", asyncHandler(statsController.hourly));
 
 module.exports = router;

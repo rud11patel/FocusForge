@@ -10,6 +10,21 @@ async function completeSession(req, res) {
   res.json(result);
 }
 
+async function pauseSession(req, res) {
+  const session = await sessionService.pauseSession(req.user.id);
+  res.json(session);
+}
+
+async function resumeSession(req, res) {
+  const session = await sessionService.resumeSession(req.user.id);
+  res.json(session);
+}
+
+async function abandonSession(req, res) {
+  const result = await sessionService.abandonSession(req.user.id, req.body);
+  res.json(result);
+}
+
 async function getActiveSession(req, res) {
   const session = await sessionService.getActiveSession(req.user.id);
   res.json(session);
@@ -23,6 +38,9 @@ async function getHistory(req, res) {
 module.exports = {
   startSession,
   completeSession,
+  pauseSession,
+  resumeSession,
+  abandonSession,
   getActiveSession,
   getHistory,
 };

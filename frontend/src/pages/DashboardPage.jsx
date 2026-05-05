@@ -24,12 +24,16 @@ export function DashboardPage() {
       api.get("/tasks"),
       api.get("/leaderboard/global"),
     ]).then(([overviewData, dailyData, tasksData, leaderboardData]) => {
+
+      //console.log("dailyData:", dailyData);
+
       setOverview(overviewData);
       setDaily(dailyData);
       setTasks(tasksData);
       setLeaderboard(leaderboardData.slice(0, 5));
     });
   }, []);
+ 
 
   if (!overview) {
     return <div className="p-6 text-slate-300">Loading dashboard...</div>;
@@ -83,7 +87,7 @@ export function DashboardPage() {
                 <p className="mt-2 text-2xl text-white">{overview.weeklyDeepWorkBlocks}</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <p className="text-sm text-slate-400">Leaderboard</p>
+                <p className="text-sm text-slate-400">Leader<br></br>-board</p>
                 <p className="mt-2 text-2xl text-white">
                   {overview.leaderboardPosition ? `#${overview.leaderboardPosition}` : "Unranked"}
                 </p>

@@ -30,4 +30,9 @@ async function heatmap(req, res) {
   res.json(data);
 }
 
-module.exports = { overview, daily, weekly, tags, momentum, heatmap };
+async function hourly(req, res) {
+  const data = await statsService.getHourlyStats(req.user.id);
+  res.json(data);
+}
+
+module.exports = { overview, daily, weekly, tags, momentum, heatmap, hourly };

@@ -14,7 +14,8 @@ async function getActiveSession(userId) {
      FROM active_sessions
      LEFT JOIN tasks ON tasks.id = active_sessions.task_id
      LEFT JOIN tags ON tags.id = active_sessions.tag_id
-     WHERE active_sessions.user_id = $1 AND active_sessions.status = 'RUNNING'`,
+     WHERE active_sessions.user_id = $1
+       AND active_sessions.status IN ('RUNNING', 'PAUSED')`,
     [userId]
   );
 
@@ -116,7 +117,7 @@ async function completeSession(userId, payload) {
     await client.query("BEGIN");
 
     const activeResult = await client.query(
-      "SELECT * FROM active_sessions WHERE user_id = $1 AND status = 'RUNNING' FOR UPDATE",
+      "SELECT * FROM active_sessions WHERE user_id = $1 AND status IN ('RUNNING', 'PAUSED') FOR UPDATE",
       [userId]
     );
 
@@ -129,13 +130,24 @@ async function completeSession(userId, payload) {
     const active = activeResult.rows[0];
     const minDurationSeconds = 300;
     const start = new Date(active.start_time);
-    const plannedEnd = new Date(
-      start.getTime() + active.planned_duration * 60 * 1000
-    );
     const now = new Date();
+    const pausedAt = active.paused_at ? new Date(active.paused_at) : null;
+    const pausedDurationSeconds = Number(active.paused_duration_seconds || 0);
+    const currentPauseSeconds = pausedAt
+      ? Math.max(Math.floor((now - pausedAt) / 1000), 0)
+      : 0;
+    const totalPausedSeconds = pausedDurationSeconds + currentPauseSeconds;
+    const plannedEnd = new Date(
+      start.getTime() +
+        active.planned_duration * 60 * 1000 +
+        totalPausedSeconds * 1000
+    );
     const endTime = now > plannedEnd ? plannedEnd : now;
 
-    const durationSeconds = Math.floor((endTime - start) / 1000);
+    const durationSeconds = Math.max(
+      Math.floor((endTime - start) / 1000) - totalPausedSeconds,
+      0
+    );
     if (durationSeconds < minDurationSeconds) {
       await client.query(
         "DELETE FROM active_sessions WHERE id = $1",
@@ -285,9 +297,114 @@ async function getSessionHistory(userId) {
   return result.rows;
 }
 
+async function pauseSession(userId) {
+  const result = await pool.query(
+    `UPDATE active_sessions
+     SET status = $1,
+         paused_at = NOW()
+     WHERE user_id = $2
+       AND status = $3
+     RETURNING *`,
+    [
+      ACTIVE_SESSION_STATUSES.PAUSED,
+      userId,
+      ACTIVE_SESSION_STATUSES.RUNNING,
+    ]
+  );
+
+  if (!result.rowCount) {
+    throw new AppError("No running session to pause", 404);
+  }
+
+  return getActiveSession(userId);
+}
+
+async function resumeSession(userId) {
+  const result = await pool.query(
+    `UPDATE active_sessions
+     SET status = $1,
+         paused_duration_seconds = paused_duration_seconds +
+           GREATEST(EXTRACT(EPOCH FROM (NOW() - paused_at))::int, 0),
+         paused_at = NULL
+     WHERE user_id = $2
+       AND status = $3
+       AND paused_at IS NOT NULL
+     RETURNING *`,
+    [
+      ACTIVE_SESSION_STATUSES.RUNNING,
+      userId,
+      ACTIVE_SESSION_STATUSES.PAUSED,
+    ]
+  );
+
+  if (!result.rowCount) {
+    throw new AppError("No paused session to resume", 404);
+  }
+
+  return getActiveSession(userId);
+}
+
+async function abandonSession(userId, payload = {}) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const activeResult = await client.query(
+      `SELECT *
+       FROM active_sessions
+       WHERE user_id = $1
+         AND status IN ('RUNNING', 'PAUSED')
+       FOR UPDATE`,
+      [userId]
+    );
+
+    if (!activeResult.rowCount) {
+      await client.query("ROLLBACK");
+      throw new AppError("No active session to abandon", 404);
+    }
+
+    const active = activeResult.rows[0];
+    const reason = String(payload.reason || "").trim();
+
+    await client.query(
+      `INSERT INTO activities (user_id, type, metadata)
+       VALUES ($1, $2, $3::jsonb)`,
+      [
+        userId,
+        "SESSION_ABANDONED",
+        JSON.stringify({
+          sessionId: active.id,
+          taskId: active.task_id,
+          tagId: active.tag_id,
+          plannedDuration: active.planned_duration,
+          reason: reason || null,
+        }),
+      ]
+    );
+
+    await client.query(
+      "DELETE FROM active_sessions WHERE id = $1",
+      [active.id]
+    );
+
+    await client.query("COMMIT");
+
+    return { message: "Session abandoned" };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   getActiveSession,
   startSession,
   completeSession,
+  pauseSession,
+  resumeSession,
+  abandonSession,
   getSessionHistory,
 };

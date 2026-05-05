@@ -6,6 +6,9 @@ const router = express.Router();
 
 router.post("/start", asyncHandler(sessionController.startSession));
 router.post("/complete", asyncHandler(sessionController.completeSession));
+router.post("/pause", asyncHandler(sessionController.pauseSession));
+router.post("/resume", asyncHandler(sessionController.resumeSession));
+router.post("/abandon", asyncHandler(sessionController.abandonSession));
 router.get("/active", asyncHandler(sessionController.getActiveSession));
 router.get("/history", asyncHandler(sessionController.getHistory));
 

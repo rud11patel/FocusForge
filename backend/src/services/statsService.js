@@ -195,6 +195,31 @@ async function getHeatmap(userId) {
   return mapDay(result.rows);
 }
 
+async function getHourlyStats(userId) {
+  const result = await pool.query(
+    `WITH hours AS (
+       SELECT generate_series(0, 23) AS hour
+     )
+     SELECT hours.hour,
+            COALESCE(SUM(focus_sessions.duration_minutes), 0) AS minutes,
+            COUNT(focus_sessions.id) AS sessions
+     FROM hours
+     LEFT JOIN focus_sessions
+       ON focus_sessions.user_id = $1
+      AND EXTRACT(HOUR FROM focus_sessions.start_time)::int = hours.hour
+      AND focus_sessions.start_time >= CURRENT_DATE - INTERVAL '30 days'
+     GROUP BY hours.hour
+     ORDER BY hours.hour ASC`,
+    [userId]
+  );
+
+  return result.rows.map((row) => ({
+    hour: Number(row.hour),
+    minutes: Number(row.minutes),
+    sessions: Number(row.sessions),
+  }));
+}
+
 module.exports = {
   getOverview,
   getDailyStats,
@@ -202,4 +227,5 @@ module.exports = {
   getTagStats,
   getMomentum,
   getHeatmap,
+  getHourlyStats,
 };

@@ -40,9 +40,24 @@ CREATE TABLE IF NOT EXISTS active_sessions (
   start_time TIMESTAMPTZ NOT NULL,
   planned_duration INTEGER NOT NULL,
   commitment_goal TEXT,
-  status VARCHAR(20) NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING', 'COMPLETED', 'CANCELLED')),
+  paused_at TIMESTAMPTZ,
+  paused_duration_seconds INTEGER NOT NULL DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING', 'PAUSED', 'COMPLETED', 'CANCELLED')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE active_sessions
+  ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ;
+
+ALTER TABLE active_sessions
+  ADD COLUMN IF NOT EXISTS paused_duration_seconds INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE active_sessions
+  DROP CONSTRAINT IF EXISTS active_sessions_status_check;
+
+ALTER TABLE active_sessions
+  ADD CONSTRAINT active_sessions_status_check
+  CHECK (status IN ('RUNNING', 'PAUSED', 'COMPLETED', 'CANCELLED'));
 
 CREATE TABLE IF NOT EXISTS focus_sessions (
   id SERIAL PRIMARY KEY,
