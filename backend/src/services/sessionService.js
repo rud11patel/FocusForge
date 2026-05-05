@@ -87,7 +87,7 @@ async function startSession(userId, payload) {
 
     const sessionId = insertResult.rows[0].id;
 
-    // 🔥 fetch enriched data (same as getActiveSession)
+    //  fetch enriched data (same as getActiveSession)
     const result = await pool.query(
       `SELECT active_sessions.*, tasks.title AS task_title, tags.name AS tag_name
        FROM active_sessions
@@ -120,7 +120,7 @@ async function completeSession(userId, payload) {
       [userId]
     );
 
-    // ✅ Idempotent: if already completed, don't crash
+    //  Idempotent: if already completed, don't crash
     if (!activeResult.rowCount) {
       await client.query("ROLLBACK");
       return { message: "Session already completed" };
@@ -245,7 +245,7 @@ async function completeSession(userId, payload) {
       ]
     );
 
-    // ✅ critical: delete active session
+    //  critical: delete active session
     await client.query(
       "DELETE FROM active_sessions WHERE id = $1",
       [active.id]
