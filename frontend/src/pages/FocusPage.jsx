@@ -10,10 +10,22 @@ const presets = [25, 50, 90, 180];
 
 function getRemainingSeconds(activeSession) {
   if (!activeSession) return 0;
+  const pausedDurationSeconds = Number(
+    activeSession.paused_duration_seconds || 0
+  );
+  const timerNow =
+    activeSession.status === "PAUSED" && activeSession.paused_at
+      ? new Date(activeSession.paused_at).getTime()
+      : Date.now();
+  const elapsedSeconds = Math.max(
+    Math.floor(
+      (timerNow - new Date(activeSession.start_time).getTime()) / 1000
+    ) - pausedDurationSeconds,
+    0
+  );
   const end =
-    new Date(activeSession.start_time).getTime() +
-    activeSession.planned_duration * 60 * 1000;
-  return Math.max(Math.floor((end - Date.now()) / 1000), 0);
+    activeSession.planned_duration * 60;
+  return Math.max(end - elapsedSeconds, 0);
 }
 
 function formatClock(totalSeconds) {
@@ -30,11 +42,15 @@ export function FocusPage() {
   const [remaining, setRemaining] = useState(0);
   const [showSessionCompletePopup, setShowSessionCompletePopup] =
     useState(false);
+  const [showRecoveryBanner, setShowRecoveryBanner] = useState(false);
+  const [showAbandonDialog, setShowAbandonDialog] = useState(false);
+  const [abandonReason, setAbandonReason] = useState("");
 
   const audioContextRef = useRef(null);
   const completionInProgressRef = useRef(false);
   const sessionEndHandledRef = useRef(false);
   const wasTabInactiveRef = useRef(document.visibilityState === "hidden");
+  const initialLoadCompleteRef = useRef(false);
 
   const originalTitleRef = useRef(document.title);
   const titleAlertTimerRef = useRef(null);
@@ -61,6 +77,11 @@ export function FocusPage() {
     setHistory(historyData);
     setActiveSession(activeData);
     setRemaining(getRemainingSeconds(activeData));
+
+    if (!initialLoadCompleteRef.current) {
+      setShowRecoveryBanner(Boolean(activeData));
+      initialLoadCompleteRef.current = true;
+    }
   }
 
   useEffect(() => {
@@ -236,7 +257,9 @@ export function FocusPage() {
 
       if (nextRemaining === 0) {
         if (timer) clearInterval(timer);
-        handleSessionEnd();
+        if (activeSession.status !== "PAUSED") {
+          handleSessionEnd();
+        }
       }
     };
 
@@ -313,10 +336,44 @@ export function FocusPage() {
     setActiveSession(data);
     setRemaining(getRemainingSeconds(data));
     completionInProgressRef.current = false;
+    setShowRecoveryBanner(false);
   }
 
   async function finishSession() {
+    setShowRecoveryBanner(false);
     await completeActiveSession();
+  }
+
+  async function pauseSession() {
+    const data = await api.post("/sessions/pause", {});
+    setActiveSession(data);
+    setRemaining(getRemainingSeconds(data));
+  }
+
+  async function resumeSession() {
+    const data = await api.post("/sessions/resume", {});
+    setActiveSession(data);
+    setRemaining(getRemainingSeconds(data));
+  }
+
+  async function abandonSession() {
+    await api.post("/sessions/abandon", {
+      reason: abandonReason,
+    });
+    setActiveSession(null);
+    setRemaining(0);
+    setAbandonReason("");
+    setShowAbandonDialog(false);
+    setShowRecoveryBanner(false);
+    sessionEndHandledRef.current = false;
+    toast("Session abandoned", {
+      icon: "!",
+      style: {
+        background: "#1e293b",
+        color: "#fff",
+      },
+    });
+    await load();
   }
 
   return (
@@ -353,22 +410,117 @@ export function FocusPage() {
         </div>
       ) : null}
 
+      {showAbandonDialog ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/75 px-4 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="abandon-session-title"
+            className="w-full max-w-md rounded-3xl border border-rose-300/30 bg-slate-950 p-6 shadow-2xl shadow-rose-950/30"
+          >
+            <p
+              id="abandon-session-title"
+              className="font-display text-3xl text-white"
+            >
+              Abandon session?
+            </p>
+            <p className="mt-3 text-sm leading-6 text-slate-300">
+              This will stop the timer without awarding XP. You can leave a
+              quick reason for your own review later.
+            </p>
+            <textarea
+              className="mt-5 min-h-24 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none transition placeholder:text-slate-500 focus:border-forge-400"
+              placeholder="Interrupted, wrong task, needed a break..."
+              value={abandonReason}
+              onChange={(event) => setAbandonReason(event.target.value)}
+            />
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setShowAbandonDialog(false)}
+                className="rounded-2xl border border-white/10 px-4 py-3 font-medium text-slate-200 hover:bg-white/5"
+              >
+                Keep session
+              </button>
+              <button
+                type="button"
+                onClick={abandonSession}
+                className="rounded-2xl bg-rose-500 px-4 py-3 font-medium text-white hover:bg-rose-400"
+              >
+                Abandon
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <Card title="Focus Timer" subtitle="The backend owns the session. The UI just reflects it.">
+        {showRecoveryBanner && activeSession ? (
+          <div className="mb-5 rounded-2xl border border-forge-300/30 bg-forge-500/10 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium text-white">
+                  Session recovered
+                </p>
+                <p className="mt-1 text-sm text-slate-300">
+                  {formatClock(remaining)} left from your previous active
+                  session.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRecoveryBanner(false)}
+                className="rounded-xl border border-white/10 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {activeSession ? (
           <div className="space-y-6">
             <div className="rounded-[2rem] border border-forge-400/20 bg-gradient-to-br from-forge-700/20 to-slate-900 p-6 text-center">
               <p className="text-sm uppercase tracking-[0.28em] text-forge-300">Live Session</p>
               <p className="mt-4 font-display text-7xl text-white">{formatClock(remaining)}</p>
+              {activeSession.status === "PAUSED" ? (
+                <p className="mt-3 text-sm font-medium text-amber-200">
+                  Paused
+                </p>
+              ) : null}
               <p className="mt-4 text-sm text-slate-300">
                 {activeSession.task_title || "No task"} • {activeSession.tag_name || "No tag"}
               </p>
             </div>
-            <button
-              onClick={finishSession}
-              className="w-full rounded-2xl bg-forge-500 px-4 py-3 font-medium text-white hover:bg-forge-400"
-            >
-              Complete Session
-            </button>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {activeSession.status === "PAUSED" ? (
+                <button
+                  onClick={resumeSession}
+                  className="rounded-2xl bg-forge-500 px-4 py-3 font-medium text-white hover:bg-forge-400"
+                >
+                  Resume
+                </button>
+              ) : (
+                <button
+                  onClick={pauseSession}
+                  className="rounded-2xl border border-white/10 px-4 py-3 font-medium text-slate-200 hover:bg-white/5"
+                >
+                  Pause
+                </button>
+              )}
+              <button
+                onClick={finishSession}
+                className="rounded-2xl bg-forge-500 px-4 py-3 font-medium text-white hover:bg-forge-400"
+              >
+                Complete
+              </button>
+              <button
+                onClick={() => setShowAbandonDialog(true)}
+                className="rounded-2xl border border-rose-300/20 px-4 py-3 font-medium text-rose-200 hover:bg-rose-500/10"
+              >
+                Abandon
+              </button>
+            </div>
           </div>
         ) : (
           <form className="space-y-4" onSubmit={startSession}>
