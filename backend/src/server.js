@@ -41,7 +41,7 @@ app.use("/api/leaderboard", authMiddleware, leaderboardRoutes);
 app.use("/api/users", authMiddleware, userRoutes);
 
 app.use(errorHandler);
-console.log("DB_PASSWORD:", process.env.DB_PASSWORD);
+//console.log("DB_PASSWORD:", process.env.DB_PASSWORD);
 app.listen(port, () => {
   console.log(`FocusForge backend running on port ${port}`);
 });
