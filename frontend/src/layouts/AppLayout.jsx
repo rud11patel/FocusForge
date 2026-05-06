@@ -14,7 +14,7 @@ export function AppLayout() {
           <p className="mt-3 text-sm text-slate-400">{user?.username}</p>
         </div>
         <nav className="flex flex-col gap-2">
-          <NavLinkItem to="/">Dashboard</NavLinkItem>
+          <NavLinkItem to="/dashboard">Dashboard</NavLinkItem>
           <NavLinkItem to="/tasks">Tasks</NavLinkItem>
           <NavLinkItem to="/focus">Focus</NavLinkItem>
           <NavLinkItem to="/analytics">Analytics</NavLinkItem>

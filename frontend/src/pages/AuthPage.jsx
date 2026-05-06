@@ -11,7 +11,7 @@ export function AuthPage({ mode }) {
   const [error, setError] = useState("");
 
   if (user) {
-    return <Navigate to={location.state?.from?.pathname || "/"} replace />;
+    return <Navigate to={location.state?.from?.pathname || "/dashboard"} replace />;
   }
 
   async function handleSubmit(event) {
