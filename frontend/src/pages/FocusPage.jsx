@@ -334,7 +334,8 @@ export function FocusPage() {
     });
 
     setActiveSession(data);
-    setRemaining(getRemainingSeconds(data));
+   // setRemaining(getRemainingSeconds(data));
+   setRemaining(Number(form.plannedDuration) * 60);
     completionInProgressRef.current = false;
     setShowRecoveryBanner(false);
   }
