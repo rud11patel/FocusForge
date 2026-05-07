@@ -8,24 +8,52 @@ import { toast } from "react-hot-toast";
 
 const presets = [25, 50, 90, 180];
 
+// function getRemainingSeconds(activeSession) {
+//   if (!activeSession) return 0;
+//   const pausedDurationSeconds = Number(
+//     activeSession.paused_duration_seconds || 0
+//   );
+//   const timerNow =
+//     activeSession.status === "PAUSED" && activeSession.paused_at
+//       ? new Date(activeSession.paused_at).getTime()
+//       : Date.now();
+//   const elapsedSeconds = Math.max(
+//     Math.floor(
+//       (timerNow - new Date(activeSession.start_time).getTime()) / 1000
+//     ) - pausedDurationSeconds,
+//     0
+//   );
+//   const end =
+//     activeSession.planned_duration * 60;
+//   return Math.max(end - elapsedSeconds, 0);
+// }
+
 function getRemainingSeconds(activeSession) {
   if (!activeSession) return 0;
+
   const pausedDurationSeconds = Number(
     activeSession.paused_duration_seconds || 0
   );
+
   const timerNow =
     activeSession.status === "PAUSED" && activeSession.paused_at
       ? new Date(activeSession.paused_at).getTime()
       : Date.now();
+
+  const startTimestamp =
+    activeSession.client_started_at ||
+    new Date(activeSession.start_time).getTime();
+
   const elapsedSeconds = Math.max(
-    Math.floor(
-      (timerNow - new Date(activeSession.start_time).getTime()) / 1000
-    ) - pausedDurationSeconds,
+    Math.floor((timerNow - startTimestamp) / 1000) -
+      pausedDurationSeconds,
     0
   );
-  const end =
+
+  const totalSeconds =
     activeSession.planned_duration * 60;
-  return Math.max(end - elapsedSeconds, 0);
+
+  return Math.max(totalSeconds - elapsedSeconds, 0);
 }
 
 function formatClock(totalSeconds) {
