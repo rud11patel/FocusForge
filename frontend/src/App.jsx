@@ -35,7 +35,7 @@ export default function App() {
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<div>404 not found</div>} />
       </Routes>
     </AuthProvider>
     </>
