@@ -3,6 +3,8 @@ const {
   ACTIVE_SESSION_STATUSES,
   DAILY_STREAK_MINUTES,
   MAX_SESSION_MINUTES,
+  MAX_STOPWATCH_MINUTES,
+  SESSION_TYPES,
   XP_PER_MINUTE,
 } = require("../utils/constants");
 const { AppError } = require("../utils/errors");
@@ -61,20 +63,27 @@ async function getActiveSession(userId) {
 // }
 
 async function startSession(userId, payload) {
-  const plannedDuration = Number(payload.plannedDuration);
+  const sessionType = payload.sessionType === SESSION_TYPES.STOPWATCH ? SESSION_TYPES.STOPWATCH : SESSION_TYPES.POMODORO;
+  let plannedDuration = Number(payload.plannedDuration || 0);
 
-  if (!plannedDuration || plannedDuration < 5 || plannedDuration > MAX_SESSION_MINUTES) {
-    throw new AppError(
-      `plannedDuration must be between 5 and ${MAX_SESSION_MINUTES}`,
-      400
-    );
+  if (sessionType === SESSION_TYPES.POMODORO) {
+    if (!plannedDuration || plannedDuration < 5 || plannedDuration > MAX_SESSION_MINUTES) {
+      throw new AppError(
+        `plannedDuration must be between 5 and ${MAX_SESSION_MINUTES} for Pomodoro sessions`,
+        400
+      );
+    }
+  } else {
+    if (plannedDuration < 0 || plannedDuration > MAX_STOPWATCH_MINUTES) {
+      plannedDuration = 0;
+    }
   }
 
   try {
     const insertResult = await pool.query(
       `INSERT INTO active_sessions 
-       (user_id, task_id, tag_id, start_time, planned_duration, commitment_goal, status)
-       VALUES ($1, $2, $3, NOW(), $4, $5, $6)
+       (user_id, task_id, tag_id, start_time, planned_duration, commitment_goal, status, session_type, last_uninterrupted_start)
+       VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, NOW())
        RETURNING id`,
       [
         userId,
@@ -83,12 +92,12 @@ async function startSession(userId, payload) {
         plannedDuration,
         payload.commitmentGoal || null,
         ACTIVE_SESSION_STATUSES.RUNNING,
+        sessionType,
       ]
     );
 
     const sessionId = insertResult.rows[0].id;
 
-    //  fetch enriched data (same as getActiveSession)
     const result = await pool.query(
       `SELECT active_sessions.*, tasks.title AS task_title, tags.name AS tag_name
        FROM active_sessions
@@ -110,7 +119,7 @@ async function startSession(userId, payload) {
   }
 }
 
-async function completeSession(userId, payload) {
+async function completeSession(userId, payload = {}) {
   const client = await pool.connect();
 
   try {
@@ -121,14 +130,13 @@ async function completeSession(userId, payload) {
       [userId]
     );
 
-    //  Idempotent: if already completed, don't crash
     if (!activeResult.rowCount) {
       await client.query("ROLLBACK");
       return { message: "Session already completed" };
     }
 
     const active = activeResult.rows[0];
-    const minDurationSeconds = 300;
+    const isStopwatch = active.session_type === SESSION_TYPES.STOPWATCH;
     const start = new Date(active.start_time);
     const now = new Date();
     const pausedAt = active.paused_at ? new Date(active.paused_at) : null;
@@ -137,39 +145,40 @@ async function completeSession(userId, payload) {
       ? Math.max(Math.floor((now - pausedAt) / 1000), 0)
       : 0;
     const totalPausedSeconds = pausedDurationSeconds + currentPauseSeconds;
-    const plannedEnd = new Date(
-      start.getTime() +
-        active.planned_duration * 60 * 1000 +
-        totalPausedSeconds * 1000
-    );
-    const endTime = now > plannedEnd ? plannedEnd : now;
+
+    let endTime = now;
+    if (!isStopwatch && active.planned_duration > 0) {
+      const plannedEnd = new Date(
+        start.getTime() +
+          active.planned_duration * 60 * 1000 +
+          totalPausedSeconds * 1000
+      );
+      if (now > plannedEnd) endTime = plannedEnd;
+    }
 
     const durationSeconds = Math.max(
       Math.floor((endTime - start) / 1000) - totalPausedSeconds,
       0
     );
-    if (durationSeconds < minDurationSeconds) {
+
+    if (durationSeconds < 1) {
       await client.query(
         "DELETE FROM active_sessions WHERE id = $1",
         [active.id]
       );
-
       await client.query("COMMIT");
-
-      return {
-        message: "Session too short, not counted",
-      };
+      return { message: "Session too short, not counted" };
     }
 
-    let durationMinutes = Math.floor(durationSeconds / 60);
-    durationMinutes = Math.min(durationMinutes, MAX_SESSION_MINUTES);
+    const durationMinutes = Math.floor(durationSeconds / 60);
 
-    const xpGained = durationMinutes * XP_PER_MINUTE;
+    // Per-second XP distribution (exact sub-minute precision)
+    const xpGained = Math.floor((durationSeconds * XP_PER_MINUTE) / 60);
 
     const sessionResult = await client.query(
       `INSERT INTO focus_sessions
-       (user_id, task_id, tag_id, start_time, end_time, duration_minutes, xp_gained, commitment_goal, commitment_completed)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (user_id, task_id, tag_id, start_time, end_time, duration_minutes, duration_seconds, session_type, verifications_count, confirmations_count, xp_gained, commitment_goal, commitment_completed)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *`,
       [
         userId,
@@ -178,6 +187,10 @@ async function completeSession(userId, payload) {
         active.start_time,
         endTime.toISOString(),
         durationMinutes,
+        durationSeconds,
+        active.session_type || SESSION_TYPES.POMODORO,
+        active.verifications_count || 0,
+        active.confirmations_count || 0,
         xpGained,
         active.commitment_goal,
         payload.commitmentCompleted ?? null,
@@ -257,7 +270,6 @@ async function completeSession(userId, payload) {
       ]
     );
 
-    //  critical: delete active session
     await client.query(
       "DELETE FROM active_sessions WHERE id = $1",
       [active.id]
@@ -282,6 +294,65 @@ async function completeSession(userId, payload) {
   }
 }
 
+async function verifySession(userId, payload = {}) {
+  const action = payload.action;
+  const active = await getActiveSession(userId);
+
+  if (!active) {
+    throw new AppError("No active session found", 404);
+  }
+
+  if (action === "PROMPT") {
+    await pool.query(
+      `UPDATE active_sessions
+       SET verification_prompted_at = NOW(),
+           verifications_count = verifications_count + 1
+       WHERE id = $1`,
+      [active.id]
+    );
+    return getActiveSession(userId);
+  }
+
+  if (action === "CONFIRM") {
+    await pool.query(
+      `UPDATE active_sessions
+       SET confirmations_count = confirmations_count + 1,
+           last_uninterrupted_start = NOW(),
+           verification_prompted_at = NULL
+       WHERE id = $1`,
+      [active.id]
+    );
+    return getActiveSession(userId);
+  }
+
+  if (action === "TIMEOUT_AUTOPAUSE") {
+    const promptedAt = active.verification_prompted_at
+      ? new Date(active.verification_prompted_at)
+      : new Date(Date.now() - 300000);
+    const now = new Date();
+    const timeoutSeconds = Math.max(Math.floor((now - promptedAt) / 1000), 300);
+
+    await pool.query(
+      `UPDATE active_sessions
+       SET status = $1,
+           paused_at = $2,
+           paused_duration_seconds = paused_duration_seconds + $3,
+           last_uninterrupted_start = NULL,
+           verification_prompted_at = NULL
+       WHERE id = $4`,
+      [
+        ACTIVE_SESSION_STATUSES.PAUSED,
+        promptedAt.toISOString(),
+        timeoutSeconds,
+        active.id,
+      ]
+    );
+    return getActiveSession(userId);
+  }
+
+  throw new AppError("Invalid verification action", 400);
+}
+
 async function getSessionHistory(userId) {
   const result = await pool.query(
     `SELECT focus_sessions.*, tasks.title AS task_title, tags.name AS tag_name
@@ -301,7 +372,8 @@ async function pauseSession(userId) {
   const result = await pool.query(
     `UPDATE active_sessions
      SET status = $1,
-         paused_at = NOW()
+         paused_at = NOW(),
+         last_uninterrupted_start = NULL
      WHERE user_id = $2
        AND status = $3
      RETURNING *`,
@@ -325,7 +397,9 @@ async function resumeSession(userId) {
      SET status = $1,
          paused_duration_seconds = paused_duration_seconds +
            GREATEST(EXTRACT(EPOCH FROM (NOW() - paused_at))::int, 0),
-         paused_at = NULL
+         paused_at = NULL,
+         last_uninterrupted_start = NOW(),
+         verification_prompted_at = NULL
      WHERE user_id = $2
        AND status = $3
        AND paused_at IS NOT NULL
@@ -378,6 +452,7 @@ async function abandonSession(userId, payload = {}) {
           taskId: active.task_id,
           tagId: active.tag_id,
           plannedDuration: active.planned_duration,
+          sessionType: active.session_type,
           reason: reason || null,
         }),
       ]
@@ -407,4 +482,5 @@ module.exports = {
   resumeSession,
   abandonSession,
   getSessionHistory,
+  verifySession,
 };

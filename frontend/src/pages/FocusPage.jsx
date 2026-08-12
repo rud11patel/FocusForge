@@ -1,14 +1,18 @@
-// FocusPage.jsx
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import { Card } from "../components/Card";
 import { toast } from "react-hot-toast";
+import { VerificationModal } from "../components/VerificationModal";
+import { useStopwatch } from "../hooks/useStopwatch";
 
 const presets = [25, 50, 90, 180];
 
 function getRemainingSeconds(activeSession) {
   if (!activeSession) return 0;
+  if (activeSession.session_type === "STOPWATCH") return 0;
+
+  const plannedMinutes = Number(activeSession.planned_duration || 0);
+  if (plannedMinutes <= 0) return 0;
 
   const pausedDurationSeconds = Number(
     activeSession.paused_duration_seconds || 0
@@ -29,15 +33,18 @@ function getRemainingSeconds(activeSession) {
     0
   );
 
-  const end =
-    activeSession.planned_duration * 60;
+  const end = plannedMinutes * 60;
 
   return Math.max(end - elapsedSeconds, 0);
 }
 
 function formatClock(totalSeconds) {
-  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
   const seconds = String(totalSeconds % 60).padStart(2, "0");
+  if (hours > 0) {
+    return `${hours}:${minutes}:${seconds}`;
+  }
   return `${minutes}:${seconds}`;
 }
 
@@ -52,6 +59,28 @@ export function FocusPage() {
   const [showRecoveryBanner, setShowRecoveryBanner] = useState(false);
   const [showAbandonDialog, setShowAbandonDialog] = useState(false);
   const [abandonReason, setAbandonReason] = useState("");
+  const [showAddTagInline, setShowAddTagInline] = useState(false);
+  const [customTagName, setCustomTagName] = useState("");
+
+  async function handleInlineCreateTag() {
+    const name = customTagName.trim();
+    if (!name) return;
+
+    try {
+      const newTag = await api.post("/tags", { name });
+      const tagData = await api.get("/tags");
+      setTags(tagData);
+      setForm((current) => ({
+        ...current,
+        tagId: String(newTag.id),
+      }));
+      setCustomTagName("");
+      setShowAddTagInline(false);
+      toast.success(`Tag "${newTag.name}" created & selected`);
+    } catch (err) {
+      toast.error(err.message || "Failed to create tag");
+    }
+  }
 
   const audioContextRef = useRef(null);
   const completionInProgressRef = useRef(false);
@@ -64,11 +93,21 @@ export function FocusPage() {
   const titleAlertStopTimerRef = useRef(null);
 
   const [form, setForm] = useState({
+    sessionType: "POMODORO",
     taskId: "",
     tagId: "",
     plannedDuration: 25,
     commitmentGoal: "",
   });
+
+  const {
+    isStopwatch,
+    elapsedSeconds: stopwatchElapsed,
+    isVerificationOpen,
+    timeoutSecondsLeft,
+    handleConfirmStillWorking,
+    handleTimeoutAutoPause,
+  } = useStopwatch(activeSession, load, playTimerEndSound);
 
   async function load() {
     const [taskData, tagData, historyData, activeData] =
@@ -311,6 +350,7 @@ export function FocusPage() {
   }
     useEffect(() => {
     if (!activeSession) return;
+    if (activeSession.session_type === "STOPWATCH") return;
 
     let timer;
 
@@ -319,60 +359,38 @@ export function FocusPage() {
         wasTabInactiveRef.current = true;
       }
 
-      const nextRemaining =
-        getRemainingSeconds(activeSession);
+      const nextRemaining = getRemainingSeconds(activeSession);
 
-      setRemaining((prev) =>
-        prev !== nextRemaining
-          ? nextRemaining
-          : prev
-      );
+      setRemaining((prev) => (prev !== nextRemaining ? nextRemaining : prev));
 
-      if (
-        document.visibilityState === "visible" &&
-        nextRemaining > 0
-      ) {
+      if (document.visibilityState === "visible" && nextRemaining > 0) {
         wasTabInactiveRef.current = false;
       }
 
-      if (nextRemaining === 0) {
-        if (timer) clearInterval(timer);
+      const plannedMinutes = Number(activeSession.planned_duration || 0);
+      const totalPlannedSeconds = plannedMinutes * 60;
 
-        if (
-          activeSession.status !== "PAUSED"
-        ) {
-          handleSessionEnd();
-        }
+      if (
+        totalPlannedSeconds > 0 &&
+        nextRemaining === 0 &&
+        activeSession.status === "RUNNING"
+      ) {
+        if (timer) clearInterval(timer);
+        handleSessionEnd();
       }
     };
 
+    updateRemaining();
+
     timer = setInterval(updateRemaining, 1000);
 
-    window.addEventListener(
-      "focus",
-      updateRemaining
-    );
-
-    document.addEventListener(
-      "visibilitychange",
-      updateRemaining
-    );
-
-    // intentionally removed:
-    // updateRemaining();
+    window.addEventListener("focus", updateRemaining);
+    document.addEventListener("visibilitychange", updateRemaining);
 
     return () => {
       clearInterval(timer);
-
-      window.removeEventListener(
-        "focus",
-        updateRemaining
-      );
-
-      document.removeEventListener(
-        "visibilitychange",
-        updateRemaining
-      );
+      window.removeEventListener("focus", updateRemaining);
+      document.removeEventListener("visibilitychange", updateRemaining);
     };
   }, [activeSession]);
 
@@ -428,7 +446,9 @@ export function FocusPage() {
   async function startSession(event) {
     event.preventDefault();
 
-    if (form.plannedDuration < 5) {
+    const isStopwatchMode = form.sessionType === "STOPWATCH";
+
+    if (!isStopwatchMode && Number(form.plannedDuration) < 5) {
       toast.error(
         "Minimum session duration is 5 minutes"
       );
@@ -450,38 +470,30 @@ export function FocusPage() {
     const data = await api.post(
       "/sessions/start",
       {
+        sessionType: form.sessionType,
         taskId: form.taskId
           ? Number(form.taskId)
           : null,
-
         tagId: form.tagId
           ? Number(form.tagId)
           : selectedTask?.tag_id || null,
-
-        plannedDuration: Number(
-          form.plannedDuration
-        ),
-
-        commitmentGoal:
-          form.commitmentGoal,
+        plannedDuration: isStopwatchMode ? 0 : Number(form.plannedDuration),
+        commitmentGoal: form.commitmentGoal,
       }
     );
 
     const enrichedSession = {
       ...data,
-      client_started_at:
-        clientStartedAt,
+      client_started_at: clientStartedAt,
     };
 
     setActiveSession(enrichedSession);
 
-    // immediate accurate UI start
     setRemaining(
-      Number(form.plannedDuration) * 60
+      isStopwatchMode ? 0 : Number(form.plannedDuration) * 60
     );
 
     completionInProgressRef.current = false;
-
     setShowRecoveryBanner(false);
   }
 
@@ -666,11 +678,62 @@ export function FocusPage() {
           </div>
         ) : null}
 
+      <VerificationModal
+        isOpen={isVerificationOpen}
+        timeoutSecondsLeft={timeoutSecondsLeft}
+        onConfirm={handleConfirmStillWorking}
+        onPause={pauseSession}
+        onStop={finishSession}
+      />
+
+      <Card title="Focus Timer" subtitle="Choose your focus mode or manage your ongoing session.">
+        {showRecoveryBanner && activeSession ? (
+          <div className="mb-5 rounded-2xl border border-forge-300/30 bg-forge-500/10 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium text-white">
+                  Session recovered
+                </p>
+                <p className="mt-1 text-sm text-slate-300">
+                  {activeSession.session_type === "STOPWATCH"
+                    ? `${formatClock(stopwatchElapsed)} elapsed in your count-up session.`
+                    : `${formatClock(remaining)} left from your previous active session.`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRecoveryBanner(false)}
+                className="rounded-xl border border-white/10 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {activeSession ? (
           <div className="space-y-6">
             <div className="rounded-[2rem] border border-forge-400/20 bg-gradient-to-br from-forge-700/20 to-slate-900 p-6 text-center">
-              <p className="text-sm uppercase tracking-[0.28em] text-forge-300">Live Session</p>
-              <p className="mt-4 font-display text-7xl text-white">{formatClock(remaining)}</p>
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.28em] text-forge-300">
+                  {activeSession.session_type === "STOPWATCH" ? "Count-up Session" : "Live Pomodoro"}
+                </span>
+                {activeSession.session_type === "STOPWATCH" && (
+                  <span className="rounded-full bg-forge-500/20 px-2.5 py-0.5 text-[10px] font-bold text-forge-300 border border-forge-500/30">
+                    STOPWATCH
+                  </span>
+                )}
+              </div>
+              <p className="mt-4 font-display text-7xl text-white">
+                {activeSession.session_type === "STOPWATCH"
+                  ? formatClock(stopwatchElapsed)
+                  : formatClock(remaining)}
+              </p>
+              {activeSession.session_type === "STOPWATCH" && (
+                <p className="mt-2 text-xs font-medium text-forge-300">
+                  +{Math.floor((stopwatchElapsed * 2) / 60)} XP earned so far
+                </p>
+              )}
               {activeSession.status === "PAUSED" ? (
                 <p className="mt-3 text-sm font-medium text-amber-200">
                   Paused
@@ -712,41 +775,80 @@ export function FocusPage() {
           </div>
         ) : (
           <form className="space-y-4" onSubmit={startSession}>
-            <div className="grid grid-cols-3 gap-2">
-              {presets.map((minutes) => (
-                <button
-                  key={minutes}
-                  type="button"
-                  onClick={() =>
-                    setForm((current) => ({
-                      ...current,
-                      plannedDuration: minutes,
-                    }))
-                  }
-                  className={`rounded-2xl px-3 py-3 text-sm ${
-                    Number(form.plannedDuration) === minutes
-                      ? "bg-forge-500 text-white"
-                      : "border border-white/10 text-slate-300"
-                  }`}
-                >
-                  {minutes}m
-                </button>
-              ))}
+            <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-white/5 border border-white/10">
+              <button
+                type="button"
+                onClick={() =>
+                  setForm((current) => ({
+                    ...current,
+                    sessionType: "POMODORO",
+                  }))
+                }
+                className={`rounded-xl py-2.5 text-sm font-medium transition ${
+                  form.sessionType === "POMODORO"
+                    ? "bg-forge-500 text-white shadow-md"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Pomodoro (Countdown)
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setForm((current) => ({
+                    ...current,
+                    sessionType: "STOPWATCH",
+                  }))
+                }
+                className={`rounded-xl py-2.5 text-sm font-medium transition ${
+                  form.sessionType === "STOPWATCH"
+                    ? "bg-forge-500 text-white shadow-md"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Stopwatch (Count-up)
+              </button>
             </div>
 
-            <input
-              type="number"
-              min="5"
-              max="240"
-              className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 outline-none transition focus:border-forge-400"
-              value={form.plannedDuration}
-              onChange={(e) =>
-                setForm((current) => ({
-                  ...current,
-                  plannedDuration: e.target.value,
-                }))
-              }
-            />
+            {form.sessionType === "POMODORO" ? (
+              <>
+                <div className="grid grid-cols-4 gap-2">
+                  {presets.map((minutes) => (
+                    <button
+                      key={minutes}
+                      type="button"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          plannedDuration: minutes,
+                        }))
+                      }
+                      className={`rounded-2xl px-3 py-3 text-sm font-medium transition ${
+                        Number(form.plannedDuration) === minutes
+                          ? "bg-forge-500 text-white"
+                          : "border border-white/10 text-slate-300 hover:bg-white/5"
+                      }`}
+                    >
+                      {minutes}m
+                    </button>
+                  ))}
+                </div>
+
+                <input
+                  type="number"
+                  min="5"
+                  max="240"
+                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 outline-none transition focus:border-forge-400"
+                  value={form.plannedDuration}
+                  onChange={(e) =>
+                    setForm((current) => ({
+                      ...current,
+                      plannedDuration: e.target.value,
+                    }))
+                  }
+                />
+              </>
+            ) : null}
 
             <select
               className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 outline-none transition focus:border-forge-400"
@@ -766,23 +868,67 @@ export function FocusPage() {
               ))}
             </select>
 
-            <select
-              className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 outline-none transition focus:border-forge-400"
-              value={form.tagId}
-              onChange={(e) =>
-                setForm((current) => ({
-                  ...current,
-                  tagId: e.target.value,
-                }))
-              }
-            >
-              <option value="">Auto / no tag</option>
-              {tags.map((tag) => (
-                <option key={tag.id} value={tag.id}>
-                  {tag.name}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-400 px-1">Tag / Category</label>
+              
+              <select
+                className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 outline-none transition focus:border-forge-400 text-white"
+                value={showAddTagInline ? "CREATE_NEW_TAG" : form.tagId}
+                onChange={(e) => {
+                  if (e.target.value === "CREATE_NEW_TAG") {
+                    setShowAddTagInline(true);
+                  } else {
+                    setShowAddTagInline(false);
+                    setForm((current) => ({
+                      ...current,
+                      tagId: e.target.value,
+                    }));
+                  }
+                }}
+              >
+                <option value="">Auto / no tag</option>
+                {tags.map((tag) => (
+                  <option key={tag.id} value={tag.id}>
+                    {tag.name} {tag.is_default ? "" : "(Custom)"}
+                  </option>
+                ))}
+                <option value="CREATE_NEW_TAG" className="font-bold text-forge-300">
+                  + Add Custom Tag...
                 </option>
-              ))}
-            </select>
+              </select>
+
+              {showAddTagInline && (
+                <div className="mt-2 flex gap-2 animate-fadeIn">
+                  <input
+                    type="text"
+                    className="flex-1 rounded-2xl border border-forge-500/40 bg-white/5 px-4 py-2.5 text-sm text-white outline-none placeholder:text-slate-500 focus:border-forge-400"
+                    placeholder="New tag name (e.g. Design, Rust)"
+                    value={customTagName}
+                    onChange={(e) => setCustomTagName(e.target.value)}
+                    maxLength={60}
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    disabled={!customTagName.trim()}
+                    onClick={handleInlineCreateTag}
+                    className="rounded-2xl bg-forge-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-forge-400 disabled:opacity-50"
+                  >
+                    + Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddTagInline(false);
+                      setCustomTagName("");
+                    }}
+                    className="rounded-2xl border border-white/10 px-3 py-2.5 text-sm font-medium text-slate-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
 
             <textarea
               className="min-h-28 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 outline-none transition focus:border-forge-400"
@@ -800,10 +946,11 @@ export function FocusPage() {
               type="submit"
               className="w-full rounded-2xl bg-forge-500 px-4 py-3 font-medium text-white hover:bg-forge-400"
             >
-              Start Session
+              {form.sessionType === "STOPWATCH" ? "Start Stopwatch" : "Start Session"}
             </button>
           </form>
         )}
+      </Card>
       </Card>
 
       <Card title="Session History" subtitle="Recent append-only focus events">

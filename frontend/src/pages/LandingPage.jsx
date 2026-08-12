@@ -1,4 +1,4 @@
-// import { Link, Navigate } from "react-router-dom";
+// import { Link, Navigate } from "react-router";
 // import { useAuth } from "../hooks/useAuth";
 // import heroImage from "../assets/landing-hero.png";
 
@@ -168,7 +168,7 @@
 // }
 
 
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate } from "react-router";
 import { useAuth } from "../hooks/useAuth";
 import heroImage from "../assets/landing-hero.png";
 

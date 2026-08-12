@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router";
 import { useAuth } from "../hooks/useAuth";
 
 export function AuthPage({ mode }) {

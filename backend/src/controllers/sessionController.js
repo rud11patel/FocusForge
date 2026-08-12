@@ -35,6 +35,11 @@ async function getHistory(req, res) {
   res.json(sessions);
 }
 
+async function verifySession(req, res) {
+  const session = await sessionService.verifySession(req.user.id, req.body);
+  res.json(session);
+}
+
 module.exports = {
   startSession,
   completeSession,
@@ -43,4 +48,5 @@ module.exports = {
   abandonSession,
   getActiveSession,
   getHistory,
+  verifySession,
 };

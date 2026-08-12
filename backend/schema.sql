@@ -14,10 +14,14 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS tags (
   id SERIAL PRIMARY KEY,
-  name VARCHAR(60) NOT NULL UNIQUE,
+  name VARCHAR(60) NOT NULL,
   is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE tags ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE tags DROP CONSTRAINT IF EXISTS tags_name_key;
 
 CREATE TABLE IF NOT EXISTS tasks (
   id SERIAL PRIMARY KEY,
@@ -42,22 +46,25 @@ CREATE TABLE IF NOT EXISTS active_sessions (
   commitment_goal TEXT,
   paused_at TIMESTAMPTZ,
   paused_duration_seconds INTEGER NOT NULL DEFAULT 0,
+  session_type VARCHAR(20) NOT NULL DEFAULT 'POMODORO' CHECK (session_type IN ('POMODORO', 'STOPWATCH')),
+  last_uninterrupted_start TIMESTAMPTZ,
+  verification_prompted_at TIMESTAMPTZ,
+  verifications_count INTEGER NOT NULL DEFAULT 0,
+  confirmations_count INTEGER NOT NULL DEFAULT 0,
   status VARCHAR(20) NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING', 'PAUSED', 'COMPLETED', 'CANCELLED')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE active_sessions
-  ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ;
+ALTER TABLE active_sessions ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ;
+ALTER TABLE active_sessions ADD COLUMN IF NOT EXISTS paused_duration_seconds INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE active_sessions ADD COLUMN IF NOT EXISTS session_type VARCHAR(20) NOT NULL DEFAULT 'POMODORO';
+ALTER TABLE active_sessions ADD COLUMN IF NOT EXISTS last_uninterrupted_start TIMESTAMPTZ;
+ALTER TABLE active_sessions ADD COLUMN IF NOT EXISTS verification_prompted_at TIMESTAMPTZ;
+ALTER TABLE active_sessions ADD COLUMN IF NOT EXISTS verifications_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE active_sessions ADD COLUMN IF NOT EXISTS confirmations_count INTEGER NOT NULL DEFAULT 0;
 
-ALTER TABLE active_sessions
-  ADD COLUMN IF NOT EXISTS paused_duration_seconds INTEGER NOT NULL DEFAULT 0;
-
-ALTER TABLE active_sessions
-  DROP CONSTRAINT IF EXISTS active_sessions_status_check;
-
-ALTER TABLE active_sessions
-  ADD CONSTRAINT active_sessions_status_check
-  CHECK (status IN ('RUNNING', 'PAUSED', 'COMPLETED', 'CANCELLED'));
+ALTER TABLE active_sessions DROP CONSTRAINT IF EXISTS active_sessions_status_check;
+ALTER TABLE active_sessions ADD CONSTRAINT active_sessions_status_check CHECK (status IN ('RUNNING', 'PAUSED', 'COMPLETED', 'CANCELLED'));
 
 CREATE TABLE IF NOT EXISTS focus_sessions (
   id SERIAL PRIMARY KEY,
@@ -66,12 +73,22 @@ CREATE TABLE IF NOT EXISTS focus_sessions (
   tag_id INTEGER REFERENCES tags(id) ON DELETE SET NULL,
   start_time TIMESTAMPTZ NOT NULL,
   end_time TIMESTAMPTZ NOT NULL,
-  duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0 AND duration_minutes <= 240),
+  duration_minutes INTEGER NOT NULL DEFAULT 0,
+  duration_seconds INTEGER NOT NULL DEFAULT 0,
+  session_type VARCHAR(20) NOT NULL DEFAULT 'POMODORO',
+  verifications_count INTEGER NOT NULL DEFAULT 0,
+  confirmations_count INTEGER NOT NULL DEFAULT 0,
   xp_gained INTEGER NOT NULL,
   commitment_goal TEXT,
   commitment_completed BOOLEAN,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE focus_sessions ADD COLUMN IF NOT EXISTS duration_seconds INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE focus_sessions ADD COLUMN IF NOT EXISTS session_type VARCHAR(20) NOT NULL DEFAULT 'POMODORO';
+ALTER TABLE focus_sessions ADD COLUMN IF NOT EXISTS verifications_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE focus_sessions ADD COLUMN IF NOT EXISTS confirmations_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE focus_sessions DROP CONSTRAINT IF EXISTS focus_sessions_duration_minutes_check;
 
 CREATE TABLE IF NOT EXISTS follows (
   follower_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -123,13 +140,14 @@ CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX IF NOT EXISTS idx_focus_sessions_user_id ON focus_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_focus_sessions_start_time ON focus_sessions(start_time);
 CREATE INDEX IF NOT EXISTS idx_active_sessions_user_id ON active_sessions(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_default_name ON tags (LOWER(name)) WHERE is_default = TRUE;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_user_name ON tags (user_id, LOWER(name)) WHERE user_id IS NOT NULL;
 
 INSERT INTO tags (name, is_default)
 VALUES
-  ('DSA', FALSE),
-  ('Development', FALSE),
   ('Study', TRUE),
-  ('Reading', TRUE),
+  ('Work', TRUE),
   ('Gym', TRUE),
+  ('Meditate', TRUE),
   ('Other', TRUE)
-ON CONFLICT (name) DO NOTHING;
+ON CONFLICT (LOWER(name)) WHERE is_default = TRUE DO NOTHING;

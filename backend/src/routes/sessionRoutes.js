@@ -9,6 +9,7 @@ router.post("/complete", asyncHandler(sessionController.completeSession));
 router.post("/pause", asyncHandler(sessionController.pauseSession));
 router.post("/resume", asyncHandler(sessionController.resumeSession));
 router.post("/abandon", asyncHandler(sessionController.abandonSession));
+router.post("/verify", asyncHandler(sessionController.verifySession));
 router.get("/active", asyncHandler(sessionController.getActiveSession));
 router.get("/history", asyncHandler(sessionController.getHistory));
 

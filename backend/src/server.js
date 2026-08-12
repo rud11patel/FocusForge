@@ -67,9 +67,30 @@ require("dotenv").config();
 
 const app = express();
 
+const allowedOrigins = (process.env.CLIENT_URL || clientUrl || "http://localhost:5173")
+  .split(",")
+  .map((url) => url.trim().replace(/\/$/, ""));
+
+const defaultDevOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+];
+
 app.use(
   cors({
-    origin: clientUrl,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (
+        allowedOrigins.includes(origin) ||
+        defaultDevOrigins.includes(origin) ||
+        process.env.NODE_ENV !== "production"
+      ) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
   })
 );

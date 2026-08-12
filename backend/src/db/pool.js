@@ -22,14 +22,23 @@
 
 // module.exports = { pool }; // export the pool;
 const { Pool } = require("pg");
-require("dotenv").config();
+const { databaseUrl, dbHost, dbPort, dbUser, dbPassword, dbName } = require("../config/env");
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === "production"
-    ? { rejectUnauthorized: false }
-    : false,
-});
+const poolConfig = databaseUrl
+  ? {
+      connectionString: databaseUrl,
+      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    }
+  : {
+      host: dbHost,
+      port: dbPort,
+      user: dbUser,
+      password: String(dbPassword ?? ""),
+      database: dbName,
+      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    };
+
+const pool = new Pool(poolConfig);
 
 module.exports = { pool };
 
