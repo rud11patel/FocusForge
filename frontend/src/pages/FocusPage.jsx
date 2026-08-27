@@ -863,9 +863,9 @@ export function FocusPage() {
         )}
       </Card>
 
-      <Card title="Session History" subtitle="Recent append-only focus events">
+      <Card title="Session History" subtitle="Last 10 focus sessions">
         <div className="space-y-4">
-          {history.map((session) => (
+          {history.slice(0, 10).map((session) => (
             <div
               key={session.id}
               className="rounded-3xl border border-white/10 bg-slate-900/60 p-5"

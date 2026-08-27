@@ -353,7 +353,7 @@ async function verifySession(userId, payload = {}) {
   throw new AppError("Invalid verification action", 400);
 }
 
-async function getSessionHistory(userId) {
+async function getSessionHistory(userId, limit = 10) {
   const result = await pool.query(
     `SELECT focus_sessions.*, tasks.title AS task_title, tags.name AS tag_name
      FROM focus_sessions
@@ -361,8 +361,8 @@ async function getSessionHistory(userId) {
      LEFT JOIN tags ON tags.id = focus_sessions.tag_id
      WHERE focus_sessions.user_id = $1
      ORDER BY focus_sessions.start_time DESC
-     LIMIT 50`,
-    [userId]
+     LIMIT $2`,
+    [userId, limit]
   );
 
   return result.rows;
