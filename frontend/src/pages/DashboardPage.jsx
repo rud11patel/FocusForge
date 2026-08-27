@@ -64,32 +64,32 @@ export function DashboardPage() {
           <div className="rounded-3xl bg-slate-900/80 p-5">
             <div className="flex items-end justify-between">
               <div>
-                <p className="text-4xl font-semibold text-white">{overview.xpProgress.currentXp}</p>
-                <p className="mt-1 text-sm text-slate-400">XP into current level</p>
+                <p className="text-3xl font-bold text-white">{overview.xpProgress.currentXp}</p>
+                <p className="mt-1 text-xs text-slate-400">XP into current level</p>
               </div>
-              <p className="text-sm text-slate-400">{overview.xpProgress.requiredXp} needed</p>
+              <p className="text-xs text-slate-400">{overview.xpProgress.requiredXp} needed</p>
             </div>
-            <div className="mt-5 h-3 rounded-full bg-slate-800">
+            <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-slate-800">
               <div
-                className="h-3 rounded-full bg-gradient-to-r from-forge-500 to-amber-300"
+                className="h-full rounded-full bg-gradient-to-r from-forge-500 to-amber-300 transition-all duration-500"
                 style={{
                   width: `${Math.min((overview.xpProgress.currentXp / overview.xpProgress.requiredXp) * 100, 100)}%`,
                 }}
               />
             </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5 sm:p-4">
-                <p className="text-xs sm:text-sm text-slate-400">Active tasks</p>
-                <p className="mt-2 text-xl font-bold text-white sm:text-2xl">{overview.activeTaskCount}</p>
+            <div className="mt-5 grid grid-cols-3 gap-2.5 sm:gap-3">
+              <div className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-3">
+                <p className="truncate text-[11px] font-medium text-slate-400">Active tasks</p>
+                <p className="mt-1.5 truncate text-lg font-bold leading-none text-white">{overview.activeTaskCount}</p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5 sm:p-4">
-                <p className="text-xs sm:text-sm text-slate-400">Deep work blocks</p>
-                <p className="mt-2 text-xl font-bold text-white sm:text-2xl">{overview.weeklyDeepWorkBlocks}</p>
+              <div className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-3">
+                <p className="truncate text-[11px] font-medium text-slate-400">Deep work</p>
+                <p className="mt-1.5 truncate text-lg font-bold leading-none text-white">{overview.weeklyDeepWorkBlocks}</p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5 sm:p-4 overflow-hidden">
-                <p className="text-xs sm:text-sm text-slate-400 truncate">Leaderboard</p>
-                <p className="mt-2 text-lg font-bold text-white sm:text-2xl truncate">
-                  {overview.leaderboardPosition ? `#${overview.leaderboardPosition}` : "Unranked"}
+              <div className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-3">
+                <p className="truncate text-[11px] font-medium text-slate-400">Leaderboard</p>
+                <p className="mt-1.5 truncate text-lg font-bold leading-none text-white">
+                  {overview.leaderboardPosition ? `#${overview.leaderboardPosition}` : "--"}
                 </p>
               </div>
             </div>
