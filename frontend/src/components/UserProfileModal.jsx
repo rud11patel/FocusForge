@@ -2,6 +2,14 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { toast } from "react-hot-toast";
 
+function formatMinutes(minutes) {
+  if (!minutes) return "0m";
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!hours) return `${rest}m`;
+  return `${hours}h ${rest}m`;
+}
+
 export function UserProfileModal({ userId, onClose, onFriendshipChange }) {
   const [profile, setProfile] = useState(null);
   const [stats, setStats] = useState(null);
@@ -213,15 +221,27 @@ export function UserProfileModal({ userId, onClose, onFriendshipChange }) {
                     </p>
                   </div>
                   <div className="rounded-xl border border-white/5 bg-white/5 p-3">
-                    <p className="text-xs text-slate-400">Focus Time</p>
+                    <p className="text-xs text-slate-400">Total Focus Time</p>
                     <p className="mt-1 text-lg font-bold text-white">
-                      {stats.totalFocusMinutes} mins
+                      {formatMinutes(stats.totalFocusMinutes)}
                     </p>
                   </div>
                   <div className="rounded-xl border border-white/5 bg-white/5 p-3">
                     <p className="text-xs text-slate-400">Completed Sessions</p>
                     <p className="mt-1 text-lg font-bold text-white">
                       {stats.completedSessionsCount}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/5 bg-white/5 p-3">
+                    <p className="text-xs text-slate-400">This Week Focus</p>
+                    <p className="mt-1 text-lg font-bold text-forge-200">
+                      {formatMinutes(stats.thisWeekFocusMinutes)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/5 bg-white/5 p-3">
+                    <p className="text-xs text-slate-400">Last Week Focus</p>
+                    <p className="mt-1 text-lg font-bold text-forge-200">
+                      {formatMinutes(stats.lastWeekFocusMinutes)}
                     </p>
                   </div>
                 </div>

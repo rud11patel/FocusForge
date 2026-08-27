@@ -80,7 +80,7 @@ async function getUserStats(viewerId, targetUserId) {
     throw new AppError("This user's statistics are private.", 403);
   }
 
-  const [userRes, sessionRes] = await Promise.all([
+  const [userRes, sessionRes, lastWeekRes, thisWeekRes] = await Promise.all([
     pool.query(
       `SELECT xp, level, current_streak, longest_streak
        FROM users WHERE id = $1`,
@@ -92,6 +92,21 @@ async function getUserStats(viewerId, targetUserId) {
          COALESCE(SUM(duration_seconds), 0) AS total_seconds,
          COUNT(*) AS completed_sessions
        FROM focus_sessions WHERE user_id = $1`,
+      [targetUserId]
+    ),
+    pool.query(
+      `SELECT COALESCE(SUM(duration_minutes), 0) AS minutes
+       FROM focus_sessions
+       WHERE user_id = $1
+         AND start_time >= date_trunc('week', CURRENT_DATE - INTERVAL '1 week')
+         AND start_time < date_trunc('week', CURRENT_DATE)`,
+      [targetUserId]
+    ),
+    pool.query(
+      `SELECT COALESCE(SUM(duration_minutes), 0) AS minutes
+       FROM focus_sessions
+       WHERE user_id = $1
+         AND start_time >= date_trunc('week', CURRENT_DATE::timestamp)`,
       [targetUserId]
     ),
   ]);
@@ -111,6 +126,8 @@ async function getUserStats(viewerId, targetUserId) {
     totalFocusMinutes: Number(sessionStats.total_minutes),
     totalFocusSeconds: Number(sessionStats.total_seconds),
     completedSessionsCount: Number(sessionStats.completed_sessions),
+    lastWeekFocusMinutes: Number(lastWeekRes.rows[0].minutes),
+    thisWeekFocusMinutes: Number(thisWeekRes.rows[0].minutes),
   };
 }
 
