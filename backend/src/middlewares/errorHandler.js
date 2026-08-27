@@ -6,7 +6,10 @@ function errorHandler(error, req, res, next) {
     console.error(error);
   }
 
-  res.status(status).json({ message });
+  res.status(status).json({
+    message,
+    suggestions: error.suggestions || undefined,
+  });
 }
 
 module.exports = { errorHandler };

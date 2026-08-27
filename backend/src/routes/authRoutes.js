@@ -7,6 +7,7 @@ const router = express.Router();
 
 router.post("/register", asyncHandler(authController.register));
 router.post("/login", asyncHandler(authController.login));
+router.get("/check-username", asyncHandler(authController.checkUsername));
 router.get("/me", authMiddleware, asyncHandler(authController.me));
 
 module.exports = router;

@@ -136,10 +136,24 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS friendships (
+  id SERIAL PRIMARY KEY,
+  requester_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  addressee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'ACCEPTED', 'REJECTED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  responded_at TIMESTAMPTZ,
+  CHECK (requester_id <> addressee_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX IF NOT EXISTS idx_focus_sessions_user_id ON focus_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_focus_sessions_start_time ON focus_sessions(start_time);
 CREATE INDEX IF NOT EXISTS idx_active_sessions_user_id ON active_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_friendships_requester ON friendships(requester_id);
+CREATE INDEX IF NOT EXISTS idx_friendships_addressee ON friendships(addressee_id);
+CREATE INDEX IF NOT EXISTS idx_friendships_status ON friendships(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_friendships_canonical_pair ON friendships (LEAST(requester_id, addressee_id), GREATEST(requester_id, addressee_id));
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_default_name ON tags (LOWER(name)) WHERE is_default = TRUE;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_user_name ON tags (user_id, LOWER(name)) WHERE user_id IS NOT NULL;
 

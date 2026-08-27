@@ -31,7 +31,10 @@ async function request(path, options = {}) {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.message || "Request failed");
+    const err = new Error(data.message || "Request failed");
+    err.status = response.status;
+    err.suggestions = data.suggestions;
+    throw err;
   }
 
   return data;

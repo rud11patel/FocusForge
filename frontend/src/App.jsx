@@ -9,6 +9,7 @@ import { TasksPage } from "./pages/TasksPage";
 import { FocusPage } from "./pages/FocusPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
+import { FriendsPage } from "./pages/FriendsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { Toaster } from "react-hot-toast";
 
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/focus" element={<FocusPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
+          <Route path="/friends" element={<FriendsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<div>404 not found</div>} />

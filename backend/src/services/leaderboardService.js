@@ -13,11 +13,20 @@ async function getGlobalLeaderboard(currentUserId) {
      LEFT JOIN focus_sessions
        ON focus_sessions.user_id = users.id
       AND focus_sessions.start_time >= date_trunc('week', CURRENT_DATE::timestamp)
-     WHERE users.privacy_level <> 'PRIVATE'
-        OR users.id = $1
+     WHERE users.id = $1
+        OR users.privacy_level = 'PUBLIC'
+        OR (
+          users.privacy_level = 'FRIENDS_ONLY'
+          AND EXISTS (
+            SELECT 1 FROM friendships
+            WHERE status = 'ACCEPTED'
+              AND ((requester_id = $1 AND addressee_id = users.id)
+                OR (requester_id = users.id AND addressee_id = $1))
+          )
+        )
      GROUP BY users.id
      ORDER BY weekly_minutes DESC, users.level DESC, users.username ASC
-     LIMIT 20`,
+     LIMIT 50`,
     [currentUserId]
   );
 

@@ -32,10 +32,10 @@ export function SettingsPage() {
               <p className="font-medium">{level.replace("_", " ")}</p>
               <p className="mt-1 text-sm text-slate-400">
                 {level === "PUBLIC"
-                  ? "Visible on global surfaces."
+                  ? "Anyone logged in can view your statistics."
                   : level === "FRIENDS_ONLY"
-                    ? "Reserved for social surfaces later."
-                    : "Hidden from leaderboards."}
+                    ? "Only accepted friends can view your statistics."
+                    : "Only you can view your statistics."}
               </p>
             </button>
           ))}

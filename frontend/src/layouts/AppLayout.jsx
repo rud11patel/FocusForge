@@ -19,6 +19,7 @@ export function AppLayout() {
           <NavLinkItem to="/focus">Focus</NavLinkItem>
           <NavLinkItem to="/analytics">Analytics</NavLinkItem>
           <NavLinkItem to="/leaderboard">Leaderboard</NavLinkItem>
+          <NavLinkItem to="/friends">Friends</NavLinkItem>
           <NavLinkItem to="/settings">Settings</NavLinkItem>
         </nav>
         <button

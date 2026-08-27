@@ -62,6 +62,7 @@ const sessionRoutes = require("./routes/sessionRoutes");
 const statsRoutes = require("./routes/statsRoutes");
 const leaderboardRoutes = require("./routes/leaderboardRoutes");
 const userRoutes = require("./routes/userRoutes");
+const friendRoutes = require("./routes/friendRoutes");
 
 require("dotenv").config();
 
@@ -115,6 +116,7 @@ app.use("/api/sessions", authMiddleware, sessionRoutes);
 app.use("/api/stats", authMiddleware, statsRoutes);
 app.use("/api/leaderboard", authMiddleware, leaderboardRoutes);
 app.use("/api/users", authMiddleware, userRoutes);
+app.use("/api/friends", authMiddleware, friendRoutes);
 
 /*
   Serve frontend build

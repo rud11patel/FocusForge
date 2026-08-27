@@ -67,6 +67,16 @@ export function FocusPage() {
     commitmentGoal: "",
   });
 
+  const audioContextRef = useRef(null);
+  const completionInProgressRef = useRef(false);
+  const sessionEndHandledRef = useRef(false);
+  const wasTabInactiveRef = useRef(document.visibilityState === "hidden");
+  const initialLoadCompleteRef = useRef(false);
+
+  const originalTitleRef = useRef(document.title);
+  const titleAlertTimerRef = useRef(null);
+  const titleAlertStopTimerRef = useRef(null);
+
   const selectedTask = useMemo(
     () => tasks.find((t) => String(t.id) === String(form.taskId)),
     [tasks, form.taskId]

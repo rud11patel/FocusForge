@@ -9,6 +9,7 @@ export function AuthPage({ mode }) {
   const [form, setForm] = useState({ username: "", email: "", password: "" });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [suggestions, setSuggestions] = useState([]);
 
   if (user) {
     return <Navigate to={location.state?.from?.pathname || "/dashboard"} replace />;
@@ -18,6 +19,7 @@ export function AuthPage({ mode }) {
     event.preventDefault();
     setSubmitting(true);
     setError("");
+    setSuggestions([]);
 
     try {
       if (isLogin) {
@@ -26,10 +28,19 @@ export function AuthPage({ mode }) {
         await register(form.username, form.email, form.password);
       }
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "An error occurred");
+      if (err.suggestions && err.suggestions.length > 0) {
+        setSuggestions(err.suggestions);
+      }
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleSelectSuggestion(sug) {
+    setForm((current) => ({ ...current, username: sug }));
+    setSuggestions([]);
+    setError("");
   }
 
   return (
@@ -69,7 +80,10 @@ export function AuthPage({ mode }) {
                 <input
                   className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 outline-none ring-0 transition focus:border-forge-400"
                   value={form.username}
-                  onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))}
+                  onChange={(event) => {
+                    setForm((current) => ({ ...current, username: event.target.value }));
+                    if (suggestions.length > 0) setSuggestions([]);
+                  }}
                   required
                 />
               </label>
@@ -94,7 +108,36 @@ export function AuthPage({ mode }) {
                 required
               />
             </label>
-            {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+
+            {error ? (
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-rose-400">{error}</p>
+
+                {suggestions.length > 0 && (
+                  <div className="rounded-2xl border border-forge-500/30 bg-forge-500/10 p-4 space-y-2 animate-fadeIn">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-forge-300">
+                      Suggested usernames for you:
+                    </p>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {suggestions.map((sug) => (
+                        <button
+                          key={sug}
+                          type="button"
+                          onClick={() => handleSelectSuggestion(sug)}
+                          className="rounded-xl border border-forge-400/30 bg-forge-500/20 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:border-forge-300 hover:bg-forge-500/40 hover:scale-105 active:scale-95"
+                        >
+                          @{sug}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Click any suggested username above to apply it instantly.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             <button
               type="submit"
               disabled={submitting}

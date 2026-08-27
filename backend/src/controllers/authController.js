@@ -15,4 +15,9 @@ async function me(req, res) {
   res.json(user);
 }
 
-module.exports = { register, login, me };
+async function checkUsername(req, res) {
+  const result = await authService.checkUsername(req.query.username);
+  res.json(result);
+}
+
+module.exports = { register, login, me, checkUsername };
