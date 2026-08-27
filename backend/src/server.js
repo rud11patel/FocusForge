@@ -130,6 +130,9 @@ app.get("*", (req, res) => {
 
 app.use(errorHandler);
 
-app.listen(port, () => {
+const { initDb } = require("./db/initDb");
+
+app.listen(port, async () => {
   console.log(`FocusForge backend running on port ${port}`);
+  await initDb();
 });

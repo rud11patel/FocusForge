@@ -59,39 +59,6 @@ export function FocusPage() {
   const [showRecoveryBanner, setShowRecoveryBanner] = useState(false);
   const [showAbandonDialog, setShowAbandonDialog] = useState(false);
   const [abandonReason, setAbandonReason] = useState("");
-  const [showAddTagInline, setShowAddTagInline] = useState(false);
-  const [customTagName, setCustomTagName] = useState("");
-
-  async function handleInlineCreateTag() {
-    const name = customTagName.trim();
-    if (!name) return;
-
-    try {
-      const newTag = await api.post("/tags", { name });
-      const tagData = await api.get("/tags");
-      setTags(tagData);
-      setForm((current) => ({
-        ...current,
-        tagId: String(newTag.id),
-      }));
-      setCustomTagName("");
-      setShowAddTagInline(false);
-      toast.success(`Tag "${newTag.name}" created & selected`);
-    } catch (err) {
-      toast.error(err.message || "Failed to create tag");
-    }
-  }
-
-  const audioContextRef = useRef(null);
-  const completionInProgressRef = useRef(false);
-  const sessionEndHandledRef = useRef(false);
-  const wasTabInactiveRef = useRef(document.visibilityState === "hidden");
-  const initialLoadCompleteRef = useRef(false);
-
-  const originalTitleRef = useRef(document.title);
-  const titleAlertTimerRef = useRef(null);
-  const titleAlertStopTimerRef = useRef(null);
-
   const [form, setForm] = useState({
     sessionType: "POMODORO",
     taskId: "",
@@ -99,6 +66,20 @@ export function FocusPage() {
     plannedDuration: 25,
     commitmentGoal: "",
   });
+
+  const selectedTask = useMemo(
+    () => tasks.find((t) => String(t.id) === String(form.taskId)),
+    [tasks, form.taskId]
+  );
+
+  useEffect(() => {
+    if (selectedTask?.tag_id) {
+      setForm((current) => ({
+        ...current,
+        tagId: String(selectedTask.tag_id),
+      }));
+    }
+  }, [selectedTask]);
 
   const {
     isStopwatch,
@@ -433,16 +414,6 @@ export function FocusPage() {
       );
   }, [showSessionCompletePopup]);
 
-  const selectedTask = useMemo(
-    () =>
-      tasks.find(
-        (task) =>
-          String(task.id) ===
-          String(form.taskId)
-      ),
-    [tasks, form.taskId]
-  );
-
   async function startSession(event) {
     event.preventDefault();
 
@@ -654,30 +625,6 @@ export function FocusPage() {
         </div>
       ) : null}
 
-      <Card title="Focus Timer" subtitle="The backend owns the session. The UI just reflects it.">
-        {showRecoveryBanner && activeSession ? (
-          <div className="mb-5 rounded-2xl border border-forge-300/30 bg-forge-500/10 p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-medium text-white">
-                  Session recovered
-                </p>
-                <p className="mt-1 text-sm text-slate-300">
-                  {formatClock(remaining)} left from your previous active
-                  session.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowRecoveryBanner(false)}
-                className="rounded-xl border border-white/10 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5"
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        ) : null}
-
       <VerificationModal
         isOpen={isVerificationOpen}
         timeoutSecondsLeft={timeoutSecondsLeft}
@@ -851,14 +798,17 @@ export function FocusPage() {
             ) : null}
 
             <select
-              className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 outline-none transition focus:border-forge-400"
+              className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 outline-none transition focus:border-forge-400 text-white"
               value={form.taskId}
-              onChange={(e) =>
+              onChange={(e) => {
+                const selectedTaskId = e.target.value;
+                const taskObj = tasks.find((t) => String(t.id) === String(selectedTaskId));
                 setForm((current) => ({
                   ...current,
-                  taskId: e.target.value,
-                }))
-              }
+                  taskId: selectedTaskId,
+                  tagId: taskObj?.tag_id ? String(taskObj.tag_id) : "",
+                }));
+              }}
             >
               <option value="">No task</option>
               {tasks.map((task) => (
@@ -872,19 +822,15 @@ export function FocusPage() {
               <label className="text-xs font-medium text-slate-400 px-1">Tag / Category</label>
               
               <select
-                className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 outline-none transition focus:border-forge-400 text-white"
-                value={showAddTagInline ? "CREATE_NEW_TAG" : form.tagId}
-                onChange={(e) => {
-                  if (e.target.value === "CREATE_NEW_TAG") {
-                    setShowAddTagInline(true);
-                  } else {
-                    setShowAddTagInline(false);
-                    setForm((current) => ({
-                      ...current,
-                      tagId: e.target.value,
-                    }));
-                  }
-                }}
+                className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 outline-none transition focus:border-forge-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                value={form.tagId}
+                disabled={Boolean(selectedTask?.tag_id)}
+                onChange={(e) =>
+                  setForm((current) => ({
+                    ...current,
+                    tagId: e.target.value,
+                  }))
+                }
               >
                 <option value="">Auto / no tag</option>
                 {tags.map((tag) => (
@@ -892,42 +838,7 @@ export function FocusPage() {
                     {tag.name} {tag.is_default ? "" : "(Custom)"}
                   </option>
                 ))}
-                <option value="CREATE_NEW_TAG" className="font-bold text-forge-300">
-                  + Add Custom Tag...
-                </option>
               </select>
-
-              {showAddTagInline && (
-                <div className="mt-2 flex gap-2 animate-fadeIn">
-                  <input
-                    type="text"
-                    className="flex-1 rounded-2xl border border-forge-500/40 bg-white/5 px-4 py-2.5 text-sm text-white outline-none placeholder:text-slate-500 focus:border-forge-400"
-                    placeholder="New tag name (e.g. Design, Rust)"
-                    value={customTagName}
-                    onChange={(e) => setCustomTagName(e.target.value)}
-                    maxLength={60}
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    disabled={!customTagName.trim()}
-                    onClick={handleInlineCreateTag}
-                    className="rounded-2xl bg-forge-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-forge-400 disabled:opacity-50"
-                  >
-                    + Add
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAddTagInline(false);
-                      setCustomTagName("");
-                    }}
-                    className="rounded-2xl border border-white/10 px-3 py-2.5 text-sm font-medium text-slate-400 hover:text-white"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
             </div>
 
             <textarea
@@ -950,7 +861,6 @@ export function FocusPage() {
             </button>
           </form>
         )}
-      </Card>
       </Card>
 
       <Card title="Session History" subtitle="Recent append-only focus events">
