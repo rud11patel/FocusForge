@@ -105,8 +105,8 @@ app.use(
   })
 );
 
-app.get("/api/health", (req, res) => {
-  res.json({ ok: true });
+app.get(["/health", "/api/health"], (req, res) => {
+  res.status(200).json({ ok: true, status: "healthy", timestamp: new Date().toISOString() });
 });
 
 app.use("/api/auth", authRoutes);

@@ -88,8 +88,8 @@ npm run dev
 Local URLs:
 
 - Frontend: `http://localhost:5173`
-- Backend: `http://localhost:4000/api`
-- Health check: `http://localhost:4000/api/health`
+- Backend: `http://localhost:4000`
+- Health check: `http://localhost:4000/health` (or `http://localhost:4000/api/health`)
 
 ## Scripts
 
