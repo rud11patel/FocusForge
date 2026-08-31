@@ -20,28 +20,36 @@ async function updatePrivacy(userId, privacyLevel) {
 async function searchUsers(query, currentUserId) {
   const searchTerm = `%${(query || "").trim()}%`;
   const result = await pool.query(
-    `SELECT id, username, level, current_streak, privacy_level
-     FROM users
-     WHERE username ILIKE $1 AND id <> $2
-     ORDER BY username ASC
+    `SELECT
+       u.id,
+       u.username,
+       u.level,
+       u.current_streak,
+       u.privacy_level,
+       CASE
+         WHEN f.status = 'ACCEPTED' THEN 'FRIENDS'
+         WHEN f.status = 'PENDING' AND f.requester_id = $2 THEN 'PENDING_OUTGOING'
+         WHEN f.status = 'PENDING' AND f.addressee_id = $2 THEN 'PENDING_INCOMING'
+         WHEN f.status = 'REJECTED' THEN 'REJECTED'
+         ELSE 'NONE'
+       END AS "friendshipStatus"
+     FROM users u
+     LEFT JOIN friendships f
+       ON (f.requester_id = $2 AND f.addressee_id = u.id)
+       OR (f.requester_id = u.id AND f.addressee_id = $2)
+     WHERE u.username ILIKE $1 AND u.id <> $2
+     ORDER BY u.username ASC
      LIMIT 20`,
     [searchTerm, currentUserId]
   );
 
-  const usersWithStatus = await Promise.all(
-    result.rows.map(async (user) => {
-      const friendshipStatus = await getFriendshipStatus(currentUserId, user.id);
-      return {
-        id: user.id,
-        username: user.username,
-        level: user.level,
-        current_streak: user.current_streak,
-        friendshipStatus,
-      };
-    })
-  );
-
-  return usersWithStatus;
+  return result.rows.map((user) => ({
+    id: user.id,
+    username: user.username,
+    level: user.level,
+    current_streak: user.current_streak,
+    friendshipStatus: user.friendshipStatus,
+  }));
 }
 
 async function getUserProfile(viewerId, targetUserId) {

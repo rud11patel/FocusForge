@@ -215,7 +215,9 @@ async function completeSession(userId, payload = {}) {
     const todayFocusRes = await client.query(
       `SELECT COALESCE(SUM(duration_minutes), 0) AS minutes
        FROM focus_sessions
-       WHERE user_id = $1 AND start_time::date = $2::date`,
+       WHERE user_id = $1
+         AND start_time >= $2::date
+         AND start_time < ($2::date + INTERVAL '1 day')`,
       [userId, activityDate]
     );
 

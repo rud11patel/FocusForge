@@ -309,7 +309,13 @@ export function FocusPage() {
         });
       }
 
-      await load();
+      setActiveSession(null);
+      setRemaining(0);
+      if (res?.session) {
+        setHistory((prev) => [res.session, ...prev.filter((s) => s.id !== res.session.id)].slice(0, 10));
+      }
+
+      load().catch(() => {});
     } finally {
       completionInProgressRef.current = false;
     }

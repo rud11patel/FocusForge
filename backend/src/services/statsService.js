@@ -18,7 +18,7 @@ async function getOverview(userId) {
     pool.query(
       `SELECT COALESCE(SUM(duration_minutes), 0) AS minutes
        FROM focus_sessions
-       WHERE user_id = $1 AND start_time::date = CURRENT_DATE`,
+       WHERE user_id = $1 AND start_time >= CURRENT_DATE`,
       [userId]
     ),
     pool.query(
@@ -35,16 +35,25 @@ async function getOverview(userId) {
       [userId]
     ),
     pool.query(
-      `WITH ranked AS (
-         SELECT user_id, SUM(duration_minutes) AS weekly_minutes,
-                RANK() OVER (ORDER BY SUM(duration_minutes) DESC, user_id ASC) AS position
+      `WITH user_weekly AS (
+         SELECT COALESCE(SUM(duration_minutes), 0) AS total
          FROM focus_sessions
-         WHERE start_time >= date_trunc('week', CURRENT_DATE::timestamp)
-         GROUP BY user_id
+         WHERE user_id = $1 AND start_time >= date_trunc('week', CURRENT_DATE::timestamp)
        )
-       SELECT position, weekly_minutes
-       FROM ranked
-       WHERE user_id = $1`,
+       SELECT
+         CASE
+           WHEN (SELECT total FROM user_weekly) = 0 THEN NULL
+           ELSE (
+             SELECT COUNT(*) + 1 FROM (
+               SELECT user_id
+               FROM focus_sessions
+               WHERE start_time >= date_trunc('week', CURRENT_DATE::timestamp)
+               GROUP BY user_id
+               HAVING SUM(duration_minutes) > (SELECT total FROM user_weekly)
+             ) higher
+           )
+         END AS position,
+         (SELECT total FROM user_weekly) AS weekly_minutes`,
       [userId]
     ),
     pool.query(
@@ -64,8 +73,8 @@ async function getOverview(userId) {
     todayMinutes: Number(todayRes.rows[0].minutes),
     weekMinutes: Number(weekRes.rows[0].minutes),
     activeTaskCount: Number(activeTasksRes.rows[0].count),
-    leaderboardPosition: leaderboardRes.rowCount ? Number(leaderboardRes.rows[0].position) : null,
-    weeklyLeaderboardMinutes: leaderboardRes.rowCount ? Number(leaderboardRes.rows[0].weekly_minutes) : 0,
+    leaderboardPosition: leaderboardRes.rows[0]?.position ? Number(leaderboardRes.rows[0].position) : null,
+    weeklyLeaderboardMinutes: leaderboardRes.rows[0]?.weekly_minutes ? Number(leaderboardRes.rows[0].weekly_minutes) : 0,
     weeklyDeepWorkBlocks: Number(deepWorkRes.rows[0].count),
     xpProgress: getXpProgress(user.xp),
   };
@@ -73,15 +82,16 @@ async function getOverview(userId) {
 
 async function getDailyStats(userId) {
   const result = await pool.query(
-    `SELECT TO_CHAR(day::date, 'YYYY-MM-DD') AS day, COALESCE(SUM(duration_minutes), 0) AS minutes
+    `SELECT TO_CHAR(calendar.day::date, 'YYYY-MM-DD') AS day, COALESCE(SUM(focus_sessions.duration_minutes), 0) AS minutes
      FROM (
        SELECT generate_series(CURRENT_DATE - INTERVAL '13 days', CURRENT_DATE, INTERVAL '1 day') AS day
      ) calendar
      LEFT JOIN focus_sessions
        ON focus_sessions.user_id = $1
-      AND focus_sessions.start_time::date = calendar.day::date
-     GROUP BY day
-     ORDER BY day ASC`,
+      AND focus_sessions.start_time >= calendar.day
+      AND focus_sessions.start_time < calendar.day + INTERVAL '1 day'
+     GROUP BY calendar.day
+     ORDER BY calendar.day ASC`,
     [userId]
   );
 
@@ -125,49 +135,49 @@ async function getTagStats(userId) {
 }
 
 async function getMomentum(userId) {
-  const result = await pool.query(
-    `WITH weeks AS (
-       SELECT
-         SUM(CASE
-           WHEN start_time >= date_trunc('week', CURRENT_DATE::timestamp)
-           THEN duration_minutes ELSE 0 END) AS this_week,
-         SUM(CASE
-           WHEN start_time >= date_trunc('week', CURRENT_DATE::timestamp) - INTERVAL '7 days'
-            AND start_time < date_trunc('week', CURRENT_DATE::timestamp)
-           THEN duration_minutes ELSE 0 END) AS last_week
+  const [result, consistencyRes, predictionRes] = await Promise.all([
+    pool.query(
+      `WITH weeks AS (
+         SELECT
+           SUM(CASE
+             WHEN start_time >= date_trunc('week', CURRENT_DATE::timestamp)
+             THEN duration_minutes ELSE 0 END) AS this_week,
+           SUM(CASE
+             WHEN start_time >= date_trunc('week', CURRENT_DATE::timestamp) - INTERVAL '7 days'
+              AND start_time < date_trunc('week', CURRENT_DATE::timestamp)
+             THEN duration_minutes ELSE 0 END) AS last_week
+         FROM focus_sessions
+         WHERE user_id = $1
+           AND start_time >= date_trunc('week', CURRENT_DATE::timestamp) - INTERVAL '7 days'
+       )
+       SELECT this_week, last_week FROM weeks`,
+      [userId]
+    ),
+    pool.query(
+      `SELECT
+         COUNT(DISTINCT start_time::date) AS days_with_focus,
+         14 AS total_days
        FROM focus_sessions
        WHERE user_id = $1
-         AND start_time >= date_trunc('week', CURRENT_DATE::timestamp) - INTERVAL '7 days'
-     )
-     SELECT this_week, last_week FROM weeks`,
-    [userId]
-  );
+         AND start_time >= CURRENT_DATE - INTERVAL '13 days'`,
+      [userId]
+    ),
+    pool.query(
+      `SELECT COALESCE(AVG(minutes), 0) AS predicted_minutes
+       FROM (
+         SELECT start_time::date AS day, SUM(duration_minutes) AS minutes
+         FROM focus_sessions
+         WHERE user_id = $1
+           AND start_time >= CURRENT_DATE - INTERVAL '13 days'
+         GROUP BY day
+       ) days`,
+      [userId]
+    ),
+  ]);
 
   const thisWeek = Number(result.rows[0].this_week || 0);
   const lastWeek = Number(result.rows[0].last_week || 0);
   const momentum = lastWeek === 0 ? (thisWeek > 0 ? 1 : 0) : (thisWeek - lastWeek) / lastWeek;
-
-  const consistencyRes = await pool.query(
-    `SELECT
-       COUNT(DISTINCT start_time::date) AS days_with_focus,
-       14 AS total_days
-     FROM focus_sessions
-     WHERE user_id = $1
-       AND start_time::date >= CURRENT_DATE - INTERVAL '13 days'`,
-    [userId]
-  );
-
-  const predictionRes = await pool.query(
-    `SELECT COALESCE(AVG(minutes), 0) AS predicted_minutes
-     FROM (
-       SELECT start_time::date AS day, SUM(duration_minutes) AS minutes
-       FROM focus_sessions
-       WHERE user_id = $1
-         AND start_time::date >= CURRENT_DATE - INTERVAL '13 days'
-       GROUP BY day
-     ) days`,
-    [userId]
-  );
 
   const daysWithFocus = Number(consistencyRes.rows[0].days_with_focus || 0);
 
@@ -180,15 +190,16 @@ async function getMomentum(userId) {
 
 async function getHeatmap(userId) {
   const result = await pool.query(
-    `SELECT TO_CHAR(day::date, 'YYYY-MM-DD') AS day, COALESCE(SUM(duration_minutes), 0) AS minutes
+    `SELECT TO_CHAR(calendar.day::date, 'YYYY-MM-DD') AS day, COALESCE(SUM(focus_sessions.duration_minutes), 0) AS minutes
      FROM (
        SELECT generate_series(CURRENT_DATE - INTERVAL '83 days', CURRENT_DATE, INTERVAL '1 day') AS day
      ) calendar
      LEFT JOIN focus_sessions
        ON focus_sessions.user_id = $1
-      AND focus_sessions.start_time::date = calendar.day::date
-     GROUP BY day
-     ORDER BY day ASC`,
+      AND focus_sessions.start_time >= calendar.day
+      AND focus_sessions.start_time < calendar.day + INTERVAL '1 day'
+     GROUP BY calendar.day
+     ORDER BY calendar.day ASC`,
     [userId]
   );
 
